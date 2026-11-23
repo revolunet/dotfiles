@@ -28,6 +28,61 @@ This machine has **two layers**:
 - `flake.lock`: pinned versions (auto-generated, commit it)
 - `~/.config/secrets/env` (outside this repo, mode 600): API keys, sourced by zsh
 
+## How this folder is hooked to the system
+
+**It isn't, permanently.** Nothing on the machine points back to this folder.
+It is only read when you run `hms`, which *builds* a snapshot and then *switches* your
+home over to it. Delete or move the folder and your environment keeps working;
+you just can't change it until you point `hms` at the new location.
+
+```
+ nix-install/  (flake.nix, home.nix, flake.lock)
+      │
+      │  hms = home-manager switch --flake ~/Documents/projets/nix-install#jbouquillon
+      │        1. evaluate  → reads homeConfigurations.jbouquillon from flake.nix
+      │        2. build     → everything lands in /nix/store (read-only)
+      │        3. activate  → updates the symlinks below
+      ▼
+ /nix/store/…-home-manager-generation      ← one complete, self-contained snapshot
+      ├── home-path/   all your packages (bin/, share/…)
+      ├── home-files/  generated dotfiles (.zshrc, git config, ssh config…)
+      └── activate     the script that does step 3
+```
+
+**What `activate` links into your home:**
+
+| Link in your home | Points to | Effect |
+|---|---|---|
+| `~/.local/state/nix/profiles/home-manager` | current generation (`home-manager-N-link`) | the list of generations you can roll back to |
+| `~/.nix-profile` → `profiles/profile` | a profile containing `home-manager-path` | `~/.nix-profile/bin` is on your `PATH` (set by NixOS), so packages show up |
+| `~/.zshrc`, `~/.zshenv`, `~/.ssh/config`, `~/.config/git/config`, `~/.config/git/allowed_signers` | files inside `…-home-manager-files/` | your dotfiles, read-only |
+| `~/.zshenv` sources `hm-session-vars.sh` | store | `EDITOR`, `ZSHENV`, `~/.local/bin` on `PATH` |
+| `~/.local/state/home-manager/gcroots/current-home` | current generation | tells `nix store gc` not to delete it |
+
+**Where you sit relative to the system layer:**
+
+```
+ /run/current-system   ← Sécurix (DINUM). Kernel, KDE, sshd, yubikey-agent, starship, git…
+        ▲                PATH: /run/current-system/sw/bin
+        │ provides nix, PATH setup, /etc/zshrc
+ ~/.nix-profile        ← YOU (this folder, via hms)
+                         PATH: ~/.nix-profile/bin, which comes before the system one
+```
+
+So you can install your own version of a tool that the system also ships,
+and yours wins in your shell. You can't change system services, users or `/etc`.
+
+**Things that follow from this:**
+- Editing `home.nix` changes nothing until you run `hms`.
+- Never edit `~/.zshrc` and friends directly: they're read-only symlinks, and the next `hms` replaces them anyway.
+- Rollback = re-activating an older generation: `home-manager generations`, then
+  run `/nix/store/…-home-manager-generation/activate` for the one you want.
+- Old generations are kept (and use disk space) until you expire them and run `nix store gc`.
+- On a new machine: clone this repo, then
+  `nix run github:nix-community/home-manager/release-26.05 -- switch --flake .#jbouquillon -b backup`.
+  You also need to bring over the files that are *not* in the repo: `~/.config/secrets/env`,
+  `~/.ssh/id_ed25519_sk*`, `~/.agent-vm/runtime.sh`.
+
 ## Daily commands
 
 | Goal | Command |
@@ -91,8 +146,16 @@ programs.git.enable = true;       # shorthand for { programs = { git = { enable 
 
 ## agent-vm + Albert
 
-- `agent-vm` comes from the flake input; `albert-code` is a git clone in `~/albert-code`
-  (shim in `~/.local/bin`), and it vendors the same agent-vm version.
+- `agent-vm` comes from the flake input (Lima built in, no `limactl` needed).
+- `albert-code` is a git clone in `~/albert-code`, but its bundled agent-vm is an
+  old version that clashes with the Nix one. So `albert-code` on your PATH is a
+  wrapper from `home.nix`:
+  - `albert-code run [--reset]` → `agent-vm run --tty zsh -l -c "opencode --auto"`
+    (the same command, through the Nix agent-vm, with read-only `.git`)
+  - `setup` / `update` → the real `~/albert-code/bin/albert-code`
+  - `install` → not needed; use `agent-vm setup` / `agent-vm doctor`
+- Don't install `lima` from nixpkgs: it would let the old bundled engine build its
+  own VMs in `~/.lima` without the `.git` protection.
 - The Albert key: `~/.config/secrets/env` (host shell) and `~/.agent-vm/runtime.sh`
   (pushed into each VM). Both are mode 600 and outside this repo.
 - `ZSHENV` points albert-code at the secrets file, since `~/.zshenv` is read-only now.

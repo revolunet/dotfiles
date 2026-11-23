@@ -7,6 +7,32 @@ let
   gitEmail = "julien.bouquillon@numerique.gouv.fr";
   # Public half of the YubiKey signing key (safe to commit).
   signingPubKey = pkgs.lib.removeSuffix "\n" (builtins.readFile ./keys/id_ed25519_sk.pub);
+
+  # albert-code (git clone in ~/albert-code) bundles an OLD copy of agent-vm
+  # that clashes with the Nix one: it needs a separate `limactl`, keeps its VMs
+  # in ~/.lima, lacks the read-only .git protection, and deletes the shared
+  # ~/.agent-vm/.agent-vm-base-version marker. So `run` goes through the Nix
+  # agent-vm (same command albert-code would run); setup/update don't use a VM
+  # and go to the real albert-code unchanged.
+  albertCode = pkgs.writeShellScriptBin "albert-code" ''
+    real="$HOME/albert-code/bin/albert-code"
+    # `albert-code run [agent-vm options]`, e.g. `albert-code run --reset`
+    if [ "''${1:-}" = run ]; then
+      shift
+      if ! grep -qs '"albert"' ./opencode.json; then
+        echo "This project isn't configured for Albert (no opencode.json with the albert provider)." >&2
+        echo "Run: albert-code setup" >&2
+        exit 1
+      fi
+      exec ${agent-vm}/bin/agent-vm "$@" run --tty zsh -l -c "opencode --auto"
+    fi
+    if [ "''${1:-}" = install ]; then
+      echo "albert-code install is not needed here: agent-vm comes from Nix (home.nix)." >&2
+      echo "Base VM: agent-vm setup   |   health: agent-vm doctor" >&2
+      exit 1
+    fi
+    exec "$real" "$@"
+  '';
 in
 {
   home.username = "jbouquillon";
@@ -20,7 +46,8 @@ in
   # Search for packages: https://search.nixos.org/packages  (or `nix search nixpkgs foo`)
   home.packages = [
     unstable.claude-code # from nixpkgs-unstable: updates more often
-    agent-vm             # from its own flake input
+    agent-vm             # from its own flake input (Lima built in: no `limactl` needed)
+    albertCode           # wrapper, see the `let` block above
 
     # Handy command-line tools
     pkgs.ripgrep # rg: fast grep
@@ -59,6 +86,7 @@ in
       hms = "home-manager switch --flake ~/Documents/projets/nix-install#jbouquillon";
       gs = "git status";
       gc = "git commit";
+      gd = "git diff";
     };
     sessionVariables = {
       EDITOR = "vim";
