@@ -35,6 +35,18 @@ It is only read when you run `hms`, which *builds* a snapshot and then *switches
 home over to it. Delete or move the folder and your environment keeps working;
 you just can't change it until you point `hms` at the new location.
 
+**So why is everything there after a reboot?** Because `hms` leaves real files on
+disk. Nothing re-runs at boot (there is no Home Manager service), and nothing needs to:
+1. The snapshot stays in `/nix/store` (on disk). A garbage-collection root,
+   `~/.local/state/home-manager/gcroots/current-home`, stops `nix store gc` from deleting it.
+2. The symlinks it made (`~/.zshrc` → `/nix/store/…`, `~/.nix-profile` → …) are
+   ordinary files, so they survive reboots.
+3. The **system** login setup (`/etc/set-environment`, standard NixOS) already adds
+   `~/.nix-profile/bin` to `PATH`, and zsh reads `~/.zshrc` as usual and follows the link.
+
+Think of the folder as a recipe and `/nix/store` as the cooked meal: `hms` cooks
+a new one and moves your plate to it; rebooting doesn't cook anything.
+
 ```
  dotfiles/     (flake.nix, home.nix, flake.lock)
       │
