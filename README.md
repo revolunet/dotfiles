@@ -36,9 +36,9 @@ home over to it. Delete or move the folder and your environment keeps working;
 you just can't change it until you point `hms` at the new location.
 
 ```
- nix-install/  (flake.nix, home.nix, flake.lock)
+ dotfiles/     (flake.nix, home.nix, flake.lock)
       │
-      │  hms = home-manager switch --flake ~/Documents/projets/nix-install#jbouquillon
+      │  hms = home-manager switch --flake ~/Documents/projets/dotfiles#jbouquillon
       │        1. evaluate  → reads homeConfigurations.jbouquillon from flake.nix
       │        2. build     → everything lands in /nix/store (read-only)
       │        3. activate  → updates the symlinks below
@@ -78,10 +78,109 @@ and yours wins in your shell. You can't change system services, users or `/etc`.
 - Rollback = re-activating an older generation: `home-manager generations`, then
   run `/nix/store/…-home-manager-generation/activate` for the one you want.
 - Old generations are kept (and use disk space) until you expire them and run `nix store gc`.
-- On a new machine: clone this repo, then
-  `nix run github:nix-community/home-manager/release-26.05 -- switch --flake .#jbouquillon -b backup`.
-  You also need to bring over the files that are *not* in the repo: `~/.config/secrets/env`,
-  `~/.ssh/id_ed25519_sk*`, `~/.agent-vm/runtime.sh`.
+- On a new machine: see [Reproduce on a new Bureautix computer](#reproduce-on-a-new-bureautix-computer).
+
+## Reproduce on a new Bureautix computer
+
+Starting point: a fresh Sécurix/Bureautix machine where you can log in (IT has
+enrolled your YubiKey), with your YubiKey and access to the old machine or your backups.
+
+### 0. What's not in this repo (gather first)
+
+| File | Why it's not in git | How to get it on the new machine |
+|---|---|---|
+| `~/.ssh/id_ed25519_sk` (+ `.pub`) | commit-signing key handle, **not** resident on the YubiKey | copy from the old machine / your backup |
+| `~/.ssh/id_ed25519_sk_rk_github` (+ `.pub`) | GitHub auth key handle | resident: re-download from the YubiKey (step 2) |
+| `~/.config/secrets/env` | Albert API key for your shell | copy, or recreate (step 5) |
+| `~/.agent-vm/runtime.sh` | pushes the Albert key into the VMs | copy from the old machine (step 6) |
+
+Copy files with a USB stick or `scp`, never through a git repo. Their permissions must be `600`.
+
+### 1. Enable flakes
+
+Flakes are off by default in Nix:
+
+```sh
+mkdir -p ~/.config/nix
+echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf
+```
+
+### 2. Get your SSH keys
+
+```sh
+mkdir -p ~/.ssh && chmod 700 ~/.ssh && cd ~/.ssh
+ssh-keygen -K          # touch the YubiKey (+ FIDO PIN if asked) → writes id_ed25519_sk_rk_github{,.pub}
+# + copy id_ed25519_sk and id_ed25519_sk.pub from your backup here
+chmod 600 ~/.ssh/id_ed25519_sk*; chmod 644 ~/.ssh/*.pub
+```
+
+### 3. Clone this repo
+
+`~/.ssh/config` doesn't exist yet, so name the key explicitly. Keep this exact path,
+because the `hms` alias points to it.
+
+```sh
+mkdir -p ~/Documents/projets
+GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519_sk_rk_github" \
+  git clone git@github.com:revolunet/dotfiles.git ~/Documents/projets/dotfiles
+```
+
+If your username isn't `jbouquillon`, change `home.username`, `home.homeDirectory`
+and `homeConfigurations.jbouquillon` (in `flake.nix`) first.
+
+### 4. First switch
+
+```sh
+cd ~/Documents/projets/dotfiles
+[ -f ~/.gitconfig ] && mv ~/.gitconfig ~/.gitconfig.backup   # would override Home Manager's git config
+nix profile list   # if it lists packages you installed by hand, `nix profile remove <name>` them (they'd conflict)
+nix run github:nix-community/home-manager/release-26.05 -- switch --flake .#jbouquillon -b backup
+```
+
+`-b backup` renames existing dotfiles (`~/.zshrc` → `~/.zshrc.backup`) instead of failing.
+Then **open a new terminal**: you get zsh with starship, all packages, the `hms` alias,
+and `home-manager` itself. From now on, use `hms`.
+
+### 5. Secrets
+
+If you didn't copy `~/.config/secrets/env`, create it (the leading space keeps the command
+out of history):
+
+```sh
+mkdir -p ~/.config/secrets && chmod 700 ~/.config/secrets
+ echo "export ALBERT_API_KEY='sk-…'" > ~/.config/secrets/env   # note the leading space
+chmod 600 ~/.config/secrets/env
+```
+
+### 6. agent-vm + Albert
+
+```sh
+git clone https://github.com/etalab-ia/albert-code.git ~/albert-code   # the wrapper in home.nix expects this path
+mkdir -p ~/.agent-vm
+# copy ~/.agent-vm/runtime.sh from the old machine, then:
+chmod 600 ~/.agent-vm/runtime.sh
+agent-vm setup --cpus 4 --memory 8 --disk 32 \
+  --preinstall=node,python,gh,chromium,docker,opencode,claude,mcp-chrome   # ~10 min
+agent-vm doctor     # expect: "No problems found"
+```
+
+**Don't** run `albert-code install`. It sets up its own old VM engine, and the wrapper refuses to run it anyway.
+Per project: `albert-code setup`, then `albert-code run`.
+
+### 7. Check everything
+
+```sh
+cd "$(mktemp -d)" && git init -q                 # throwaway repo
+git commit --allow-empty -m "test signing"       # YubiKey blinks: touch it
+git verify                                       # first column G = good signature
+cd ~
+ssh -T git@github.com                        # touch: "Hi <user>! You've successfully authenticated"
+echo ${ALBERT_API_KEY:+albert key loaded}
+agent-vm doctor
+```
+
+GitHub already knows both public keys (same YubiKey), so pushing and the
+"Verified" badge work right away.
 
 ## Daily commands
 

@@ -83,7 +83,7 @@ in
     shellAliases = {
       pbcopy = "xsel --clipboard --input";
       pbpaste = "xsel --clipboard --output";
-      hms = "home-manager switch --flake ~/Documents/projets/nix-install#jbouquillon";
+      hms = "home-manager switch --flake ~/Documents/projets/dotfiles#jbouquillon";
       gs = "git status";
       gc = "git commit";
       gd = "git diff";
