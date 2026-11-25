@@ -55,6 +55,8 @@ in
     pkgs.jq      # JSON
     pkgs.htop
     pkgs.mdcat   # render Markdown in the terminal: `mdcat README.md`
+    pkgs.scalingo # CLI for the Scalingo PaaS
+    pkgs.gitleaks # detect secrets in git (pre-commit hook, see below)
 
     # Tools for editing Nix itself
     pkgs.nixd        # language server (VS Code: "Nix IDE" extension)
@@ -132,12 +134,32 @@ in
       init.defaultBranch = "main";
       log.showSignature = false; # use `git log --show-signature` when you want to check
       alias.verify = "log --format='%G? %h %an %s' -10"; # G = good signature, N = none
+      # Run the pre-commit hook below from every repo (core.hooksPath).
+      core.hooksPath = "${config.home.homeDirectory}/.config/git/hooks";
     };
   };
 
   # Lets `git log --show-signature` verify your own commits.
   xdg.configFile."git/allowed_signers".text =
     ''${gitEmail} namespaces="git" ${signingPubKey}'';
+
+  # Global pre-commit hook: refuse to stage a commit that contains secrets.
+  # core.hooksPath above points every repo at this directory, so no `git init
+  # --template` or per-repo setup is ever needed.
+  home.file.".config/git/hooks/pre-commit" = {
+    executable = true;
+    text = ''
+      #!/usr/bin/env sh
+      set -eu
+      cd "$(git rev-parse --show-toplevel)"
+      if command -v gitleaks >/dev/null 2>&1; then
+        gitleaks protect --staged --verbose
+      else
+        echo "pre-commit: gitleaks not found in PATH — refusing to commit (run: hms)" >&2
+        exit 1
+      fi
+    '';
+  };
 
   programs.ssh = {
     enable = true;
