@@ -3,9 +3,6 @@
 # Option reference: https://home-manager-options.extranix.com
 { config, pkgs, unstable, agent-vm, ... }:
 
-# Markdown preview for Dolphin (middle-click / right-click) in its own module.
-imports = [ ./md-preview.nix ];
-
 let
   gitEmail = "julien.bouquillon@numerique.gouv.fr";
   # Public half of the YubiKey signing key (safe to commit).
@@ -38,6 +35,9 @@ let
   '';
 in
 {
+  # Markdown preview for Dolphin (middle-click / right-click), own module.
+  imports = [ ./md-preview.nix ];
+
   home.username = "jbouquillon";
   home.homeDirectory = "/home/jbouquillon";
 

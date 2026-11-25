@@ -17,6 +17,9 @@ let
       url = "https://github.com/BenXsha/md-preview/archive/d385506f60b40d6beb2a57c285a013cf20056a11.tar.gz";
       sha256 = "sha256-wd8cVOXq2QFEeZj62P0YTxzx4HI9Qn4OmopFs93uAVU=";
     };
+    # The pyproject build (`--no-isolation`) needs setuptools importable to
+    # serve the setuptools.build_meta backend.
+    nativeBuildInputs = with pkgs.python3Packages; [ setuptools ];
     propagatedBuildInputs = with pkgs.python3Packages; [
       markdown-it-py
       linkify-it-py
@@ -43,10 +46,11 @@ let
     };
     dontConfigure = true;
     dontBuild = true;
+    sourceRoot = "package";
     installPhase = ''
       mkdir -p "$out/katex/fonts"
-      cp "$sourceRoot/dist/katex.min.js" "$sourceRoot/dist/katex.min.css" "$out/katex/"
-      cp "$sourceRoot"/dist/fonts/*.woff2 "$out/katex/fonts/"
+      cp dist/katex.min.js dist/katex.min.css "$out/katex/"
+      cp dist/fonts/*.woff2 "$out/katex/fonts/"
     '';
   };
 
@@ -60,9 +64,10 @@ let
     };
     dontConfigure = true;
     dontBuild = true;
+    sourceRoot = "package";
     installPhase = ''
       mkdir -p "$out/mermaid"
-      cp "$sourceRoot/dist/mermaid.min.js" "$out/mermaid/"
+      cp dist/mermaid.min.js "$out/mermaid/"
     '';
   };
 
@@ -78,20 +83,22 @@ in
   home.packages = [ mdPreview ];
 
   # In Dolphin, middle-click opens the 2nd app for a MIME type and
-  # Shift+middle-click the 3rd: default = editor, then md-preview (PDF) and
-  # md-preview (browser). The .desktop entries are added to the MIME
-  # associations in that order.
+  # Shift+middle-click the 3rd. Order: editor (double-click), then
+  # md-preview (browser, opens the styled HTML in the default browser —
+  # Firefox — via xdg-open), then md-preview (PDF, Chromium-only).
+  # PDF generation is Chromium-only upstream (md-preview/_find_chromium), so
+  # the middle-click default uses the browser route which works with Firefox.
   xdg.mimeApps = {
     enable = true;
     defaultApplications."text/markdown" = [ "org.kde.kate.desktop" ];
     defaultApplications."text/x-markdown" = [ "org.kde.kate.desktop" ];
     associations.added."text/markdown" = [
-      "md-preview.desktop"
       "md-preview-browser.desktop"
+      "md-preview.desktop"
     ];
     associations.added."text/x-markdown" = [
-      "md-preview.desktop"
       "md-preview-browser.desktop"
+      "md-preview.desktop"
     ];
   };
 
@@ -138,7 +145,7 @@ in
   # Right-click → Markdown Preview (PDF) / (Browser). KIO user service menus
   # must be executable for Dolphin to trust them.
   xdg.dataFile."kio/servicemenus/md-preview-servicemenu.desktop" = {
-    mode = "0755";
+    executable = true;
     text = ''
       [Desktop Entry]
       Type=Service

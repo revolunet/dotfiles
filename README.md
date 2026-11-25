@@ -46,14 +46,29 @@ this config and conflict with Home Manager.
 ## Markdown preview in Dolphin
 
 `md-preview.nix` gives a styled preview of `.md` files in Dolphin:
-**middle-click** opens a styled PDF, **Shift+middle-click** an HTML page,
-**right-click** adds *Markdown Preview (PDF / Browser)* to the menu.
-Uses the system Chromium for the PDF when present (else falls back to the
-browser). Mermaid diagrams and KaTeX math work offline: the browser bundles are
+**middle-click** opens the styled HTML in the default browser (Firefox),
+**Shift+middle-click** opens the styled PDF, **right-click** adds
+*Markdown Preview (Browser / PDF)* to the menu.
+The PDF route is Chromium-only upstream (`md-preview`'s `_find_chromium`), so
+the middle-click default uses the browser route, which works with Firefox.
+Mermaid diagrams and KaTeX math work offline: the browser bundles are
 vendored via Nix (pinned, served from the store). Adds `assets` at build time,
 so the first `hms` needs HTTPS access to `github.com`, `registry.npmjs.org`
 (katex 0.16.11, mermaid 11.17.2 — MIT). Double-click on `.md` stays on Kate
 (the default is set in `xdg.mimeApps.defaultApplications`).
+
+## Addons
+
+Every addon in this setup, where it lives, and how to switch it off:
+
+| Addon | What it does | Toggle | Where |
+|---|---|---|---|
+| **Markdown preview (Dolphin)** | Themed `.md` preview: middle-click → HTML in Firefox, Shift+middle-click → PDF (Chromium), right-click menu. | Remove `./md-preview.nix` from `imports` in `home.nix`, then `hms`. | `md-preview.nix` |
+| **agent-vm + Albert** | Sovereign AI agent: `agent-vm` from its own flake input, `albert-code` wrapper routes `run` through the Nix agent-vm. | Flake input in `flake.nix`; `agent-vm` + `albertCode` in `home.packages`. Per project: `albert-code setup`. | `flake.nix`, `home.nix` |
+| **YubiKey SSH signing** | Git commits/tags signed with a FIDO2 `sk-ed25519` key; pushes via the resident GitHub key. Each commit needs a key touch. | `programs.git.signing` + `programs.ssh` in `home.nix`; public half in `keys/`. | `home.nix`, `keys/` |
+| **Secrets gate (gitleaks)** | Global pre-commit hook refuses any commit containing a secret, in every repo (via `core.hooksPath`). | `home.file` pre-commit hook + `gitleaks` in `home.packages`. Never bypass. | `home.nix` |
+| **Shell (zsh + starship + direnv)** | Autosuggestions, syntax highlighting, secret-proof history, starship prompt, per-project `direnv`+`nix-direnv`. | `programs.zsh/starship/direnv` in `home.nix`. | `home.nix` |
+| **Unfree packages** | Enables `claude-code` (and any other unfree package). | `config.allowUnfree = true` for both package sets. | `flake.nix` |
 
 ## Secrets & gitleaks
 
